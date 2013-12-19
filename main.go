@@ -14,10 +14,10 @@ import (
 	"time"
 )
 
-const dateFormat = "20060201    150405"
+const dateFormat = "20060201    150405" // 18 chars, as per SIP2 spec
 
-var numWorkers = flag.Int("w", 100, "number of concurent workers")
-var workerSleep = flag.Int("s", 1000, "max worker sleep between requests (ms)")
+var numWorkers = flag.Int("w", 100, "number of concurrent workers")
+var workerSleep = flag.Int("s", 1000, "max worker sleep in ms between requests")
 
 var borrowers []string
 var items []string
@@ -26,7 +26,7 @@ var onLoan map[string]string
 func checkout() string {
 	b := borrowers[rand.Intn(len(borrowers))]
 	i := items[rand.Intn(len(items))]
-	onLoan[i] = b // store transaction for checkIn
+	onLoan[i] = b // store items on loan to check it in later
 	date := time.Now().Format(dateFormat)
 	return fmt.Sprintf("11YN%s%sAOHTUL|AA%v|AB%v|ACSTRESS|\r", date, date, b, i)
 }
@@ -39,7 +39,7 @@ func checkin() string {
 		break
 	}
 	date := time.Now().Format(dateFormat)
-	return fmt.Sprintf("09N%s%sAPHUTL|AOHUTL|AB%s|ACSTRESS\r", date, date, i)
+	return fmt.Sprintf("09N%s%sAPHUTL|AOHUTL|AB%s|ACSTRESS|\r", date, date, i)
 }
 
 func randomRequest() string {
@@ -58,14 +58,22 @@ func doRequest(w int) {
 	defer conn.Close()
 
 	// login
-	_, err = conn.Write([]byte(fmt.Sprintf("9300CNstresstest%d|COstresstest%d|CPHUTL|\r", w, w)))
+	loginRequest := fmt.Sprintf("9300CNstresstest%d|COstresstest%d|CPHUTL|\r", w, w)
+	//fmt.Println("--> " + loginRequest)
+	_, err = conn.Write([]byte(loginRequest))
 	if err != nil {
 		log.Fatal(err)
 	}
 	reader := bufio.NewReader(conn)
+	_, err = reader.ReadString('\r')
+	if err != nil {
+		log.Fatal(err)
+	}
+	//fmt.Println("<--" + string(loginResponse))
+
 	for {
 		sipRequest := randomRequest()
-		//fmt.Printf("%s\n", sipRequest)
+		fmt.Printf("--> %s\n", sipRequest)
 		_, err = conn.Write([]byte(sipRequest))
 		if err != nil {
 			log.Fatal(err)
@@ -75,7 +83,7 @@ func doRequest(w int) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(string(res))
+		fmt.Println("<--" + string(res)[1:])
 		r := rand.Intn(*workerSleep)
 		time.Sleep(time.Duration(r) * time.Millisecond)
 	}
